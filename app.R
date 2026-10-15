@@ -389,12 +389,24 @@ COLS_DETALLE <- list(
   excepcionales = c("apellidos", "nombre", "situacion")
 )
 
+# Nombres y apellidos siempre en MAYÚSCULAS, sin espacios sobrantes (incluye tildes y ñ)
+a_mayus <- function(x) {
+  x <- gsub("\\s+", " ", trimws(as.character(x)))
+  chartr("áéíóúüñàèìòùâêîôû", "ÁÉÍÓÚÜÑÀÈÌÒÙÂÊÎÔÛ", toupper(x))
+}
+mayus_nombres <- function(d) {
+  if (is.null(d) || nrow(d) == 0) return(d)
+  for (cn in intersect(c("apellidos", "nombre"), names(d))) d[[cn]] <- a_mayus(d[[cn]])
+  d
+}
+
 cargar_registro <- function(id) {
   reg <- q("SELECT * FROM registros WHERE id_registro = ?id", id = id)
   out <- list(reg = if (nrow(reg) == 1) reg else NULL)
   for (t in names(COLS_DETALLE)) {
     out[[t]] <- q(sprintf("SELECT %s FROM %s WHERE id_registro = ?id ORDER BY orden",
                           paste(COLS_DETALLE[[t]], collapse = ", "), t), id = id)
+    out[[t]] <- mayus_nombres(out[[t]])
   }
   out
 }
@@ -450,7 +462,7 @@ guardar_registro <- function(slot, f, accion, clave_id, rev_esperada, forzar = F
     det <- list()
     for (t in names(COLS_DETALLE)) {
       exc(con, sprintf("DELETE FROM %s WHERE id_registro = ?id", t), id = id)
-      d <- f[[t]]
+      d <- mayus_nombres(f[[t]])
       if (t %in% c("nuevos", "retirados", "neep") && !is.null(d) && nrow(d) > 0) {
         d$rut <- formatear_rut(d$rut)
         d$rut[!nzchar(d$rut)] <- NA_character_
@@ -563,7 +575,7 @@ exportar_excel <- function(file, incluir_borradores = FALSE) {
     check.names = FALSE, stringsAsFactors = FALSE)
 
   detalle <- function(tabla, cols, nombres) {
-    d <- q(sprintf("SELECT * FROM %s", tabla))
+    d <- mayus_nombres(q(sprintf("SELECT * FROM %s", tabla)))
     d <- d[d$id_registro %in% reg$id_registro, , drop = FALSE]
     d <- d[order(match(d$id_registro, reg$id_registro), d$orden), , drop = FALSE]
     s <- S[match(d$id_registro, S$id_registro), , drop = FALSE]
@@ -797,6 +809,7 @@ CSS <- "
 .pill-ok{background:#d1e7dd;color:#0f5132}.pill-pend{background:#fff3cd;color:#664d03}
 .card-header{font-weight:600}
 #tabla_instancias{overflow-x:auto}
+input[id*='-apellidos_'],input[id*='-nombre_']{text-transform:uppercase}
 .login-fondo{position:fixed;inset:0;overflow:auto;z-index:10;display:flex;align-items:center;justify-content:center;padding:1.5rem 1rem;background:linear-gradient(160deg,#f4f7fa 0%,#e6edf4 100%)}
 .login-caja{width:100%;max-width:400px;text-align:center}
 .login-logo{width:210px;max-width:70%;height:auto;margin-bottom:1.5rem;mix-blend-mode:multiply}
