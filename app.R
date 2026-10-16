@@ -77,6 +77,8 @@ env <- function(x, d = "") {
 USA_POSTGRES <- nzchar(env("DB_HOST"))
 ADMIN_CLAVE  <- env("ADMIN_CLAVE", if (!USA_POSTGRES) "admin-local" else "")
 PEPPER       <- env("APP_PEPPER",  if (!USA_POSTGRES) "pepper-local-solo-pruebas" else "")
+SESION_HORAS <- suppressWarnings(as.numeric(env("SESION_HORAS", "8")))   # cuánto se recuerda la sesión en el navegador
+if (is.na(SESION_HORAS) || SESION_HORAS <= 0) SESION_HORAS <- 8
 if (USA_POSTGRES && (!nzchar(ADMIN_CLAVE) || !nzchar(PEPPER))) {
   stop("Faltan las variables de entorno APP_PEPPER y/o ADMIN_CLAVE.")
 }
@@ -260,6 +262,24 @@ crear_esquema()
 # ------------------------------------------------------------------------------
 normaliza_clave <- function(x) toupper(gsub("[^A-Za-z0-9]", "", x %||% ""))
 hash_clave <- function(x) digest::hmac(PEPPER, normaliza_clave(x), "sha256")
+
+# Sesión recordada en el navegador: código firmado (no contiene la clave) con vencimiento.
+# Cambiar APP_PEPPER o ADMIN_CLAVE invalida todos los códigos vigentes.
+firma_sesion <- function(payload) digest::hmac(paste0("sesion|", PEPPER, "|", ADMIN_CLAVE), payload, "sha256")
+crear_token <- function(clave_id) {
+  payload <- sprintf("%s|%d", clave_id, as.integer(as.numeric(Sys.time()) + SESION_HORAS * 3600))
+  paste0(payload, ".", firma_sesion(payload))
+}
+leer_token <- function(tok) {
+  if (!is.character(tok) || length(tok) != 1 || is.na(tok) || !nzchar(tok)) return(NULL)
+  partes <- strsplit(tok, ".", fixed = TRUE)[[1]]
+  if (length(partes) != 2 || !identical(firma_sesion(partes[1]), partes[2])) return(NULL)
+  p <- strsplit(partes[1], "|", fixed = TRUE)[[1]]
+  if (length(p) != 2) return(NULL)
+  exp <- suppressWarnings(as.numeric(p[2]))
+  if (is.na(exp) || exp < as.numeric(Sys.time())) return(NULL)
+  list(clave_id = p[1], exp = exp)
+}
 
 # Claves de 6 dígitos (100000-999999), al azar y únicas entre sí (incluye claves desactivadas)
 generar_claves <- function(evaluadores) {
@@ -858,6 +878,29 @@ JS <- "
   Shiny.inputBindings.register(b, 'evaluaciones.fechaNativa');
 })();
 $(document).on('keyup', '#clave', function(e){ if (e.key === 'Enter') $('#entrar').click(); });
+(function sesion(){
+  var KEY = 'reg_sesion_v1';
+  function borrar(){ try { localStorage.removeItem(KEY); } catch(e) {} }
+  function leer(){
+    try {
+      var o = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!o || !o.token || !o.exp || o.exp * 1000 < Date.now()) { borrar(); return null; }
+      return o.token;
+    } catch(e) { return null; }
+  }
+  $(document).on('click', '#salir', borrar);
+  $(document).on('shiny:connected', function(){
+    var t = leer();
+    if (t) Shiny.setInputValue('token_sesion', t, {priority: 'event'});
+  });
+  (function reg(){
+    if (!(window.Shiny && Shiny.addCustomMessageHandler)) { setTimeout(reg, 20); return; }
+    Shiny.addCustomMessageHandler('guardar_sesion', function(m){
+      try { localStorage.setItem(KEY, JSON.stringify({token: m.token, exp: m.exp})); } catch(e) {}
+    });
+    Shiny.addCustomMessageHandler('borrar_sesion', function(m){ borrar(); });
+  })();
+})();
 "
 
 fecha_nativa <- function(id, label, value = "") {
@@ -1053,11 +1096,53 @@ server <- function(input, output, session) {
   })
   output$msg_login <- renderUI(if (nzchar(msg_login())) div(class = "text-danger small mt-2", msg_login()))
 
+  # La clave sigue activa (el administrador puede desactivarla en cualquier momento)
+  clave_vigente <- function(id) {
+    if (is.null(id) || is.na(id)) return(FALSE)
+    if (identical(id, "ADMIN")) return(TRUE)
+    nrow(q("SELECT 1 AS x FROM claves WHERE clave_id = ?cid AND activa = 1", cid = id)) == 1
+  }
+  recordar_sesion <- function(id) {
+    session$sendCustomMessage("guardar_sesion",
+      list(token = crear_token(id), exp = as.numeric(Sys.time()) + SESION_HORAS * 3600))
+  }
+  # Recupera la sesión si el navegador trae un código válido (F5, pestaña recargada, etc.)
+  observeEvent(input$token_sesion, {
+    if (!is.null(ses$rol)) return()
+    t <- leer_token(input$token_sesion)
+    if (is.null(t) || !clave_vigente(t$clave_id)) { session$sendCustomMessage("borrar_sesion", TRUE); return() }
+    if (identical(t$clave_id, "ADMIN")) {
+      ses$rol <- "admin"; ses$clave_id <- "ADMIN"; ses$nombre <- "Administrador"
+    } else {
+      fila <- q("SELECT clave_id, evaluador FROM claves WHERE clave_id = ?cid AND activa = 1", cid = t$clave_id)
+      ses$rol <- "evaluador"; ses$clave_id <- fila$clave_id
+      ses$nombre <- if (vacio(fila$evaluador)) fila$clave_id else fila$evaluador
+      ex("UPDATE claves SET ultimo_uso = ?t WHERE clave_id = ?cl", t = ahora(), cl = fila$clave_id)
+    }
+  }, ignoreNULL = TRUE)
+
+  # Si el administrador desactiva una clave, se corta la sesión abierta
+  cortar_sesion <- function() {
+    session$sendCustomMessage("borrar_sesion", TRUE)
+    liberar_actual()
+    ses$rol <- NULL; rv$slot <- NULL; rv$reg <- NULL
+    showModal(modalDialog(title = "Clave desactivada",
+      "Tu clave fue desactivada por la administración, por lo que ya no puedes seguir. Si crees que es un error, contacta a quien te la entregó.",
+      footer = actionButton("cerrar_desactivada", "Entendido", class = "btn-primary"), easyClose = FALSE))
+  }
+  observeEvent(input$cerrar_desactivada, { removeModal(); session$reload() })
+  observe({
+    invalidateLater(30000, session)
+    if (!identical(isolate(ses$rol), "evaluador")) return()
+    if (!clave_vigente(isolate(ses$clave_id))) cortar_sesion()
+  })
+
   observeEvent(input$entrar, {
     x <- trimws(input$clave %||% "")
     if (!nzchar(x)) { msg_login("Ingresa tu clave."); return() }
     if (nzchar(ADMIN_CLAVE) && identical(x, ADMIN_CLAVE)) {
       ses$rol <- "admin"; ses$clave_id <- "ADMIN"; ses$nombre <- "Administrador"
+      recordar_sesion("ADMIN")
       msg_login(""); return()
     }
     # Freno por sesión (no global): tras 5 fallos seguidos, espera creciente solo para esa sesión
@@ -1070,6 +1155,7 @@ server <- function(input, output, session) {
       ses$rol <- "evaluador"; ses$clave_id <- fila$clave_id
       ses$nombre <- if (vacio(fila$evaluador)) fila$clave_id else fila$evaluador
       ex("UPDATE claves SET ultimo_uso = ?t WHERE clave_id = ?cl", t = ahora(), cl = fila$clave_id)
+      recordar_sesion(fila$clave_id)
       msg_login("")
     } else {
       ses$fallos <- ses$fallos + 1L
@@ -1084,6 +1170,7 @@ server <- function(input, output, session) {
   }
   observeEvent(input$salir, {
     liberar_actual()
+    session$sendCustomMessage("borrar_sesion", TRUE)
     session$reload()
   })
   session$onSessionEnded(function() liberar_actual())
@@ -1319,6 +1406,7 @@ server <- function(input, output, session) {
 
   # --------------------------- Guardado ---------------------------------------
   ejecutar_guardado <- function(accion, f, forzar = FALSE) {
+    if (!clave_vigente(ses$clave_id)) { cortar_sesion(); return(list(ok = FALSE, conflicto = FALSE, error = "Clave desactivada.")) }
     r <- tryCatch(
       guardar_registro(rv$slot, f, accion, ses$clave_id, rv$rev, forzar),
       error = function(e) list(ok = FALSE, conflicto = FALSE, error = conditionMessage(e)))
