@@ -806,21 +806,39 @@ CSS <- "
 .cab-lista{display:grid;gap:8px;font-size:.8rem;color:#6c757d;margin-bottom:4px}
 .barra-acciones{position:sticky;bottom:0;background:var(--bs-body-bg);border-top:1px solid var(--bs-border-color);padding:.75rem .5rem;z-index:5}
 .pill{display:inline-block;padding:.2rem .6rem;border-radius:1rem;font-size:.8rem;margin:0 .25rem .25rem 0}
-.pill-ok{background:#d1e7dd;color:#0f5132}.pill-pend{background:#fff3cd;color:#664d03}
-.card-header{font-weight:600}
+.pill-ok{background:#e3f1ea;color:#2c6d52;border:1px solid #bfdccd}.pill-pend{background:#eceff1;color:#5f6368;border:1px solid #dde2e5}
+:root{--az:#69a2b7;--az-osc:#336b82;--az-claro:#eaf3f7;--verde:#68b591;--verde-osc:#2c6d52;--gris:#949494;--gris-osc:#5f6368;--tinta:#1f2a30}
+.cabecera{display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;padding:.8rem 0;margin-bottom:1.25rem;border-bottom:3px solid var(--az)}
+.cabecera-marca{display:flex;align-items:center;gap:.9rem;min-width:0}
+.cabecera-logo{height:42px;width:auto;mix-blend-mode:multiply;flex:none}
+.cabecera-sep{width:1px;align-self:stretch;background:#d5dde1}
+.cabecera-titulo{font-weight:600;color:var(--tinta);line-height:1.2}
+.cabecera-sub{font-size:.85rem;color:var(--gris-osc)}
+.seccion{border:1px solid #dfe5e8;border-left:5px solid var(--az);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(31,42,48,.06)}
+.seccion-cab{display:flex;align-items:center;gap:.75rem;background:var(--az-claro)!important;border-bottom:1px solid #d3e3ea!important;padding:.7rem 1rem}
+.seccion-num{flex:none;width:1.9rem;height:1.9rem;border-radius:50%;background:var(--az-osc);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.95rem}
+.seccion-tit{font-weight:600;color:var(--tinta);font-size:1.02rem}
+.titulo-form{border-left:5px solid var(--verde);padding:.1rem 0 .1rem .85rem}
+.titulo-form h4{font-weight:700;color:var(--tinta)}
+.nav-tabs .nav-link{color:var(--gris-osc)}
+.nav-tabs .nav-link.active{color:var(--az-osc);font-weight:600;border-bottom:3px solid var(--az-osc)}
+table.dataTable thead th{background:var(--az-claro);color:var(--tinta);border-bottom:2px solid var(--az)!important}
+.card{border-radius:10px}
+.dataTables_wrapper{overflow-x:auto}
+.alert-info{background:var(--az-claro);border-color:#c4dce6;color:#255567}.alert-info a{color:var(--az-osc)}
 #tabla_instancias{overflow-x:auto}
 input[id*='-apellidos_'],input[id*='-nombre_']{text-transform:uppercase}
-.login-fondo{position:fixed;inset:0;overflow:auto;z-index:10;display:flex;align-items:center;justify-content:center;padding:1.5rem 1rem;background:linear-gradient(160deg,#f4f7fa 0%,#e6edf4 100%)}
+.login-fondo{position:fixed;inset:0;overflow:auto;z-index:10;display:flex;align-items:center;justify-content:center;padding:1.5rem 1rem;background:linear-gradient(160deg,#f6f8f9 0%,#e4eef2 100%)}
 .login-caja{width:100%;max-width:400px;text-align:center}
 .login-logo{width:210px;max-width:70%;height:auto;margin-bottom:1.5rem;mix-blend-mode:multiply}
-.login-card{background:#fff;border:1px solid #e1e7ee;border-radius:14px;padding:1.75rem 1.5rem 1.5rem;box-shadow:0 6px 24px rgba(20,40,70,.08);text-align:left}
+.login-card{background:#fff;border:1px solid #e1e7ee;border-top:4px solid var(--az);border-radius:14px;padding:1.75rem 1.5rem 1.5rem;box-shadow:0 6px 24px rgba(20,40,70,.08);text-align:left}
 .login-titulo{font-size:1.15rem;font-weight:600;color:#1f2d3d;margin:0 0 .25rem;line-height:1.3}
-.login-proceso{display:inline-block;font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#1b6ca8;background:#e3effa;border-radius:1rem;padding:.1rem .6rem;margin-bottom:.4rem}
+.login-proceso{display:inline-block;font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--az-osc);background:var(--az-claro);border-radius:1rem;padding:.1rem .6rem;margin-bottom:.4rem}
 .login-sub{font-size:.88rem;color:#6c757d;margin:.25rem 0 1.1rem}
 .login-card .form-control{height:46px;font-size:1.05rem;letter-spacing:.15em}
 .login-btn{height:46px;font-weight:600;margin-top:.25rem}
 .login-pie{font-size:.78rem;color:#8a97a6;margin-top:1.1rem}
-@media (max-width:768px){.fila-lista{grid-template-columns:1fr!important}.cab-lista{display:none}}
+@media (max-width:768px){.fila-lista{grid-template-columns:1fr!important}.cab-lista{display:none}.cabecera{flex-wrap:nowrap}.cabecera .btn{flex:none}.cabecera-titulo{font-size:.92rem}.cabecera-logo{height:32px}.cabecera-sep{display:none}.seccion{border-left-width:4px}}
 "
 
 JS <- "
@@ -852,7 +870,8 @@ entero_input <- function(id, label, value = "", ...) {
 }
 
 ui <- page_fluid(
-  theme = bs_theme(version = 5, primary = "#1b6ca8"),
+  theme = bs_theme(version = 5, primary = "#336b82", success = "#2c6d52", secondary = "#5f6368",
+                   "body-bg" = "#f5f7f8", "body-color" = "#1f2a30", "border-radius" = ".5rem"),
   title = paste0("Registro de aplicaciones", SUFIJO_PROCESO),
   tags$head(tags$style(HTML(CSS)), tags$script(HTML(JS))),
   div(class = "container", style = "max-width:1100px;", uiOutput("pagina"))
@@ -894,7 +913,20 @@ vista_lista_ui <- tagList(
            "Si hubo una segunda toma de algún curso, agrégala con el recuadro de arriba: aparecerá como una fila nueva con Toma 2.")
 )
 
-seccion <- function(titulo, ...) card(class = "mb-3", card_header(titulo), card_body(...))
+seccion <- function(titulo, ...) {
+  m <- regmatches(titulo, regexec("^([0-9]+)\\. (.*)$", titulo))[[1]]
+  cab <- if (length(m) == 3) tagList(span(class = "seccion-num", m[2]), span(class = "seccion-tit", m[3]))
+         else span(class = "seccion-tit", titulo)
+  card(class = "mb-4 seccion", card_header(class = "seccion-cab", cab), card_body(...))
+}
+
+cabecera <- function(titulo, sub) {
+  div(class = "cabecera",
+      div(class = "cabecera-marca",
+          if (nzchar(LOGO_URI)) tagList(img(src = LOGO_URI, alt = "Fundación Astoreca", class = "cabecera-logo"), div(class = "cabecera-sep")),
+          div(div(class = "cabecera-titulo", titulo), div(class = "cabecera-sub", sub))),
+      actionButton("salir", "Cerrar sesión", class = "btn-outline-secondary btn-sm"))
+}
 
 crear_form <- function(k, reg) {
   v <- function(col) if (is.null(reg) || is.na(reg[[col]])) "" else as.character(reg[[col]])
@@ -943,17 +975,13 @@ vista_form_ui <- tagList(
 )
 
 eval_ui <- function() tagList(
-  div(class = "d-flex justify-content-between align-items-center py-3 border-bottom mb-3",
-      div(strong(paste0("Registro de aplicaciones", SUFIJO_PROCESO)), span(class = "text-muted ms-2", textOutput("quien", inline = TRUE))),
-      actionButton("salir", "Cerrar sesión", class = "btn-outline-secondary btn-sm")),
+  cabecera(paste0("Registro de aplicaciones", SUFIJO_PROCESO), textOutput("quien", inline = TRUE)),
   conditionalPanel("!output.en_form", vista_lista_ui),
   conditionalPanel("output.en_form", vista_form_ui)
 )
 
 admin_ui <- function() tagList(
-  div(class = "d-flex justify-content-between align-items-center py-3 border-bottom mb-3",
-      div(strong("Administración"), span(class = "text-muted ms-2", paste0("Registro de aplicaciones", SUFIJO_PROCESO))),
-      actionButton("salir", "Cerrar sesión", class = "btn-outline-secondary btn-sm")),
+  cabecera("Administración", paste0("Registro de aplicaciones", SUFIJO_PROCESO)),
   conditionalPanel("output.en_form", vista_form_ui),
   conditionalPanel("!output.en_form", navset_tab(
     nav_panel("Avance",
@@ -1228,7 +1256,7 @@ server <- function(input, output, session) {
 
   output$titulo_form <- renderUI({
     s <- rv$slot; req(s)
-    div(class = "mb-3",
+    div(class = "mb-3 titulo-form",
         h4(class = "mb-0", sprintf("%s · %s · %s%s", s$sigla, etiqueta_curso(s$grado, s$letra), s$evaluacion,
                                    txt_toma(s$grado, s$toma))),
         span(class = "text-muted", sprintf("%s · Modalidad: %s", s$nombre, s$modalidad)))
@@ -1497,7 +1525,7 @@ server <- function(input, output, session) {
         span(class = "pill pill-ok", sprintf("Enviadas: %d", n("enviada"))),
         span(class = "pill pill-pend", sprintf("Borradores: %d", n("borrador"))),
         span(class = "pill", style = "background:#e9ecef;", sprintf("Pendientes: %d", n("pendiente"))),
-        span(class = "pill", style = "background:#cfe2ff;", sprintf("Total registros: %d", nrow(s))))
+        span(class = "pill", style = "background:#d9e9f0;color:#255567;", sprintf("Total registros: %d", nrow(s))))
   })
   dt_opts <- list(pageLength = 15, dom = "ftip", language = list(search = "Buscar:", zeroRecords = "Sin resultados",
                   info = "_START_–_END_ de _TOTAL_", paginate = list(previous = "Anterior", `next` = "Siguiente")))
