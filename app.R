@@ -624,7 +624,8 @@ exportar_excel <- function(file, incluir_borradores = FALSE) {
     writeFormula(wb, "Aplicaciones", startCol = match("Retirados registrados", names(ap)), startRow = 2,
                  x = sprintf('IF(A%d="","",COUNTIF(Retirados!$A$2:$A$30000,A%d))', r, r))
     writeFormula(wb, "Aplicaciones", startCol = match("Control cantidades", names(ap)), startRow = 2,
-                 x = sprintf('IF(A%d="","",IF(AND(%s%d=%s%d,%s%d=%s%d),"OK","REVISAR"))', r,
+                 x = sprintf('IF(A%d="","",IF(OR(%s%d="",%s%d=""),"REVISAR",IF(AND(%s%d=%s%d,%s%d=%s%d),"OK","REVISAR")))', r,
+                             col("Ausentes declarados"), r, col("Retirados declarados"), r,
                              col("Ausentes declarados"), r, col("Ausentes registrados"), r,
                              col("Retirados declarados"), r, col("Retirados registrados"), r))
     conditionalFormatting(wb, "Aplicaciones", cols = match("Control cantidades", names(ap)), rows = 2:(n + 1),
@@ -997,6 +998,7 @@ admin_ui <- function() tagList(
       div(class = "mt-2 d-flex gap-2",
           actionButton("adm_ver", "Ver contenido del registro seleccionado", class = "btn-primary btn-sm"),
           actionButton("adm_editar_sel", "Editar registro seleccionado", class = "btn-outline-primary btn-sm"),
+          actionButton("adm_marcar_sel", "Marcar borrador(es) como enviado(s)", class = "btn-outline-success btn-sm"),
           actionButton("adm_eliminar_sel", "Eliminar registro(s) seleccionado(s)", class = "btn-outline-danger btn-sm ms-auto")),
       div(class = "mt-3 d-flex flex-wrap gap-2 align-items-end",
           textInput("adm_comentario", "Comentario para el evaluador (opcional)", width = "420px"),
@@ -1432,7 +1434,8 @@ server <- function(input, output, session) {
     showModal(modalDialog(
       title = if (enviada) "Actualizar envío" else "Enviar registro",
       if (enviada) "Se guardarán tus correcciones y quedará registro de la versión anterior."
-      else "Una vez enviado podrás corregirlo después con \"Actualizar envío\".",
+      else if (identical(ses$rol, "admin")) "Una vez enviado, el evaluador no podrá modificarlo mientras no lo habilites para corregir."
+      else "Una vez enviado no podrás modificarlo.",
       footer = tagList(modalButton("Cancelar"),
                        actionButton("confirmar_envio", if (enviada) "Actualizar" else "Enviar", class = "btn-success"))))
   })
@@ -1673,6 +1676,7 @@ server <- function(input, output, session) {
       footer = tagList(
         actionButton("adm_m_editar", "Editar registro", class = "btn-primary me-auto"),
         actionButton("adm_m_eliminar", "Eliminar", class = "btn-outline-danger"),
+        if (reg$estado == "borrador") actionButton("adm_m_marcar", "Marcar como enviado", class = "btn-success"),
         actionButton("adm_m_hab",   "Habilitar corrección", class = "btn-info"),
         actionButton("adm_m_deshab", "Bloquear", class = "btn-outline-secondary"),
         actionButton("adm_m_ok",   "Marcar Revisado",      class = "btn-success"),
@@ -1726,6 +1730,63 @@ server <- function(input, output, session) {
     pedir_eliminar(rev_df()$id[sel])
   })
   observeEvent(input$adm_m_eliminar, { id <- adm_id_abierto(); req(id); pedir_eliminar(id) })
+
+  # --- Marcar borradores como enviados (solo administración) ---
+  ids_marcar <- reactiveVal(character())
+  pedir_marcar <- function(ids) {
+    req(identical(ses$rol, "admin"))
+    ids_marcar(ids)
+    showModal(modalDialog(title = "Marcar como enviado",
+      sprintf("Se marcarán como enviados %d registro(s) que están en borrador, con lo que tengan guardado hasta ahora, aunque estén incompletos. ", length(ids)),
+      "El evaluador ya no podrá modificarlos, salvo que luego los habilites para corregir. Quedará constancia en el historial.",
+      footer = tagList(modalButton("Cancelar"), actionButton("adm_conf_marcar", "Marcar como enviado", class = "btn-success"))))
+  }
+  marcar_enviado <- function(ids) {
+    n <- 0L
+    for (id in ids) {
+      d <- cargar_registro(id); cur <- d$reg
+      if (is.null(cur) || !identical(cur$estado, "borrador")) next
+      ts <- ahora()
+      quien_envia <- if (!vacio(cur$actualizado_por) && cur$actualizado_por != "ADMIN") cur$actualizado_por
+                     else if (!vacio(cur$creado_por) && cur$creado_por != "ADMIN") cur$creado_por else "ADMIN"
+      rev_nueva <- as.integer(cur$rev + 1L)
+      fila <- cur; fila$estado <- "enviada"; fila$enviado_por <- quien_envia; fila$fecha_envio <- ts
+      fila$estado_revision <- "Pendiente"; fila$habilitado_para <- NA_character_
+      fila$rev <- rev_nueva; fila$actualizado_por <- "ADMIN"; fila$actualizado <- ts
+      snap <- jsonlite::toJSON(list(registro = as.list(fila), detalle = d[names(COLS_DETALLE)]),
+                               auto_unbox = TRUE, na = "null", dataframe = "rows")
+      hecho <- with_tx(function(con) {
+        k <- exc(con, "UPDATE registros SET estado = 'enviada', enviado_por = ?ep, fecha_envio = ?ts, estado_revision = 'Pendiente', habilitado_para = NULL, rev = ?rv, actualizado_por = 'ADMIN', actualizado = ?ts WHERE id_registro = ?id AND estado = 'borrador'",
+                ep = quien_envia, ts = ts, rv = rev_nueva, id = id)
+        if (k == 1) DBI::dbAppendTable(con, "historial",
+          data.frame(id_registro = id, rev = rev_nueva, accion = "enviar (marcado por administración)",
+                     clave_id = "ADMIN", ts = ts, snapshot = as.character(snap), stringsAsFactors = FALSE))
+        k
+      })
+      n <- n + as.integer(isTRUE(hecho == 1))
+    }
+    tick_adm(tick_adm() + 1L)
+    n
+  }
+  observeEvent(input$adm_marcar_sel, {
+    sel <- input$adm_tabla_rev_rows_selected
+    if (!length(sel)) { showNotification("Selecciona al menos un registro.", type = "warning"); return() }
+    d <- rev_df()[sel, , drop = FALSE]
+    ids <- d$id[d$Estado == "borrador"]
+    if (!length(ids)) { showNotification("Los registros seleccionados ya están enviados.", type = "warning"); return() }
+    pedir_marcar(ids)
+  })
+  observeEvent(input$adm_m_marcar, { id <- adm_id_abierto(); req(id); pedir_marcar(id) })
+  observeEvent(input$adm_conf_marcar, {
+    req(identical(ses$rol, "admin"))
+    ids <- ids_marcar(); removeModal()
+    if (!length(ids)) return()
+    n <- marcar_enviado(ids)
+    showNotification(sprintf("%d registro(s) marcados como enviados.%s", n,
+                             if (n < length(ids)) sprintf(" %d no se pudieron marcar (ya no estaban en borrador).", length(ids) - n) else ""),
+                     type = if (n == length(ids)) "message" else "warning", duration = 6)
+    ids_marcar(character())
+  })
   observeEvent(input$adm_conf_eliminar, {
     req(identical(ses$rol, "admin"))
     if (!identical(trimws(input$adm_texto_eliminar %||% ""), "ELIMINAR")) {
